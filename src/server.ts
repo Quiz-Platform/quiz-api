@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import questionsAndAnswers from './loaders/questions-and-answers';
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
+import bodyParser from 'body-parser';
 
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
@@ -23,6 +24,7 @@ const port = process.env.PORT ?? 8080;
 const cors = require('cors');
 
 app.use(cors());
+app.use(bodyParser.json());
 app.use('/api', questionsAndAnswers);
 
 app.listen(port);

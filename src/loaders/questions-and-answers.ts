@@ -1,6 +1,8 @@
 import express, { Request, Response } from 'express';
 import fs from "fs";
 import path from "path";
+import { saveUserAnswer, UserAnswer } from '../services/firestore';
+import {AnswerRequest} from '../models/answer-request';
 
 const router = express.Router();
 
@@ -14,14 +16,6 @@ interface Question {
   id: number;
   text: string;
   options: Option[];
-}
-
-interface AnswerRequest {
-  token: string;
-  telegramUser: string;
-  timestamp: number;
-  questionId: number;
-  answerId: string;
 }
 
   // Loading mock data
@@ -57,7 +51,7 @@ router.get("/api/questions/:id", (req: Request, res: Response) => {
 });
 
 // POST /api/answers
-router.post("/api/answers", (req: Request, res: Response) => {
+router.post("/api/answers", async (req: Request, res: Response) => {
   const { token, telegramUser, timestamp, questionId, answerId }: AnswerRequest = req.body;
 
   // Validate token
@@ -79,7 +73,22 @@ router.post("/api/answers", (req: Request, res: Response) => {
 
   const isCorrect = answer.isTrue;
 
-  console.log("Response:", { telegramUser, timestamp, questionId, answerId, isCorrect });
+  // Save to Firestore
+  try {
+    const userAnswer: UserAnswer = {
+      telegramUser,
+      questionId,
+      answerId,
+      isCorrect,
+      timestamp
+    };
+
+    await saveUserAnswer(userAnswer);
+    console.log("Answer saved to Firestore:", { telegramUser, questionId, answerId, isCorrect });
+  } catch (error) {
+    console.error("Error saving to Firestore:", error);
+    return res.status(500).json({ message: "Failed to save answer" });
+  }
 
   res.json({ status: "ok", correct: isCorrect });
 });
