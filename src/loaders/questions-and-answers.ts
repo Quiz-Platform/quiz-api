@@ -16,6 +16,14 @@ interface Question {
   options: Option[];
 }
 
+interface AnswerRequest {
+  token: string;
+  telegramUser: string;
+  timestamp: number;
+  questionId: number;
+  answerId: string;
+}
+
   // Loading mock data
   const questionsPath = path.join(__dirname, "../../src/mocks/questions.mock.json");
   let questions: Question[] = [];
@@ -50,7 +58,18 @@ router.get("/api/questions/:id", (req: Request, res: Response) => {
 
 // POST /api/answers
 router.post("/api/answers", (req: Request, res: Response) => {
-  const { telegramUser, timestamp, questionId, answerId } = req.body;
+  const { token, telegramUser, timestamp, questionId, answerId }: AnswerRequest = req.body;
+
+  // Validate token
+  // TODO: Use Firebase Authentication SDK's Email and password based authentication instead of API token
+  const validToken = process.env.API_TOKEN;
+  if (!validToken) {
+    return res.status(500).json({ message: "Configuration error" });
+  }
+
+  if (!token || token !== validToken) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
 
   const question = questions.find(q => q.id === questionId);
   if (!question) return res.status(400).json({ message: "Unknown questionId" });
