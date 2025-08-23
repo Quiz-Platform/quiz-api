@@ -50,7 +50,7 @@ router.get("/api/questions/:id", (req: Request, res: Response) => {
 
 // POST /api/answers
 router.post("/api/answers", (req: Request, res: Response) => {
-  const { user, timestamp, questionId, answerId } = req.body;
+  const { telegramUser, timestamp, questionId, answerId } = req.body;
 
   const question = questions.find(q => q.id === questionId);
   if (!question) return res.status(400).json({ message: "Unknown questionId" });
@@ -60,7 +60,7 @@ router.post("/api/answers", (req: Request, res: Response) => {
 
   const isCorrect = answer.isTrue;
 
-  console.log("Response:", { user, timestamp, questionId, answerId, isCorrect });
+  console.log("Response:", { telegramUser, timestamp, questionId, answerId, isCorrect });
 
   res.json({ status: "ok", correct: isCorrect });
 });
