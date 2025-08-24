@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import {Answer, AnswerRequest} from '../models/answer-request';
+import { Answer } from '../models/answer-request';
 
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
@@ -16,7 +16,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 export interface UserAnswer extends Answer {
-  createdAt: string; // Firestore timestamp
+  createdAt: string; // Date and time when it was put to Firestore
 }
 
 export const saveUserAnswer = async (userAnswer: UserAnswer): Promise<string> => {

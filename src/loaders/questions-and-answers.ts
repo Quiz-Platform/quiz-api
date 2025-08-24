@@ -80,7 +80,8 @@ router.post("/api/answers", async (req: Request, res: Response) => {
       questionId,
       answerId,
       isCorrect,
-      timestamp
+      timestamp,
+      createdAt: new Date().toString(),
     };
 
     await saveUserAnswer(userAnswer);
