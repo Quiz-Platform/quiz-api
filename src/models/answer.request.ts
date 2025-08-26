@@ -2,8 +2,7 @@ export interface Answer {
   telegramUser: string;
   timestamp: number;
   questionId: number;
-  answerId: string;
-  isCorrect: boolean;
+  answerId: number;
 }
 
 export interface AnswerRequest extends Answer {

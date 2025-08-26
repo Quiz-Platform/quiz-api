@@ -3,18 +3,18 @@
     "id": 0,
     "text": "Eros Ramazzotti ...... un cantante molto famoso.",
     "options": [
-      { "id": "a", "text": "c'e", "isTrue": false },
-      { "id": "b", "text": "è", "isTrue": true },
-      { "id": "c", "text": "ha", "isTrue": false }
+      { "id": 0, "text": "c'e", "isTrue": false },
+      { "id": 1, "text": "è", "isTrue": true },
+      { "id": 2, "text": "ha", "isTrue": false }
     ]
   },
   {
     "id": 1,
     "text": "Io ...... 28 anni.",
     "options": [
-      { "id": "a", "text": "ho", "isTrue": true },
-      { "id": "b", "text": "sono", "isTrue": true },
-      { "id": "c", "text": "a", "isTrue": false }
+      { "id": 0, "text": "ho", "isTrue": true },
+      { "id": 1, "text": "sono", "isTrue": true },
+      { "id": 2, "text": "a", "isTrue": false }
     ]
   }
 ]

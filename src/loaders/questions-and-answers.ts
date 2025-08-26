@@ -1,93 +1,86 @@
 import express, { Request, Response } from 'express';
-import fs from "fs";
-import path from "path";
-import { saveUserAnswer, UserAnswer } from '../services/firestore';
-import {AnswerRequest} from '../models/answer-request';
+import { ServiceFactory } from '../services/service-factory';
+import { AnswerRequest } from '../models/answer.request';
+import { UserAnswer } from '../models/database.interface';
 
 const router = express.Router();
 
-interface Option {
-  id: string;
-  text: string;
-  isTrue: boolean;
-}
+// Get services from factory
+const questionsService = ServiceFactory.getQuestionsService();
+const databaseService = ServiceFactory.getDatabaseService();
 
-interface Question {
-  id: number;
-  text: string;
-  options: Option[];
-}
-
-  // Loading mock data
-  const questionsPath = path.join(__dirname, "../../src/mocks/questions.mock.json");
-  let questions: Question[] = [];
-
+// GET /questions
+router.get("/questions/", async (req: Request, res: Response) => {
   try {
-    const data = fs.readFileSync(questionsPath, "utf8");
-    questions = JSON.parse(data);
-  } catch (err) {
-  console.error("Error loading mock data", err);
-}
+    const questions = await questionsService.getAllQuestions();
+    if (!questions.length) {
+      res.status(204).json({ message: "There are no questions" });
+      return;
+    }
 
-// GET /api/questions
-router.get("/api/questions/", (req: Request, res: Response) => {
-  if (!questions.length) {
-    return res.status(204).json({ message: "There are no questions" });
+    res.json(questions);
+  } catch (error) {
+    console.error("Error fetching questions:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
-
-  res.json(questions);
 });
 
-// GET /api/questions/:id
-router.get("/api/questions/:id", (req: Request, res: Response) => {
-  const id = Number(req.params.id);
-  const question = questions.find(q => q.id === id);
+// GET /questions/:id
+router.get("/questions/:id", async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const question = await questionsService.getQuestionById(id);
 
-  if (!question) {
-    return res.status(404).json({ message: "No such question" });
+    if (!question) {
+      res.status(404).json({ message: "No such question" });
+      return;
+    }
+
+    res.json(question);
+  } catch (error) {
+    console.error("Error fetching question:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
-
-  res.json(question);
 });
 
-// POST /api/answers
-router.post("/api/answers", async (req: Request, res: Response) => {
-  const { token, telegramUser, timestamp, questionId, answerId }: AnswerRequest = req.body;
+// POST /answers
+router.post("/answers", async (req: Request, res: Response) => {
+  const { token, telegramUser, timestamp, questionId, answerId }: AnswerRequest = req.body as AnswerRequest;
 
   // Validate token
-  // TODO: Use Firebase Authentication SDK's Email and password based authentication instead of API token
-  const validToken = process.env.API_TOKEN;
-  if (!validToken) {
-    return res.status(500).json({ message: "Configuration error" });
-  }
+  let isTokenValid: boolean;
 
-  if (!token || token !== validToken) {
+  isTokenValid = await questionsService.validateToken(token);
+
+  if (isTokenValid) {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
-  const question = questions.find(q => q.id === questionId);
-  if (!question) return res.status(400).json({ message: "Unknown questionId" });
+  let isCorrect: boolean;
 
-  const answer = question.options.find(o => o.id === answerId);
-  if (!answer) return res.status(400).json({ message: "Unknown answerId" });
-
-  const isCorrect = answer.isTrue;
-
-  // Save to Firestore
   try {
-    const userAnswer: UserAnswer = {
+    // Validate question and answer
+    isCorrect = await questionsService.validateAnswer(questionId, answerId);
+
+    // Save to database
+    const userAnswer = {
       telegramUser,
       questionId,
       answerId,
       isCorrect,
       timestamp,
-      createdAt: new Date().toString(),
-    };
+      token,
+    } as UserAnswer;
 
-    await saveUserAnswer(userAnswer);
-    console.log("Answer saved to Firestore:", { telegramUser, questionId, answerId, isCorrect });
+    console.log("Answer received:", { telegramUser, questionId, answerId, isCorrect });
+
+    await databaseService.saveUserAnswer(userAnswer);
+    console.log("Answer saved:", { telegramUser, questionId, answerId, isCorrect });
   } catch (error) {
-    console.error("Error saving to Firestore:", error);
+    console.error("Error processing answer:", error);
+    if (error instanceof Error && (error.message === 'Question not found' || error.message === 'Answer not found')) {
+      return res.status(400).json({ message: error.message });
+    }
     return res.status(500).json({ message: "Failed to save answer" });
   }
 
