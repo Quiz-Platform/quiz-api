@@ -37,7 +37,7 @@ export class MockQuestionsService implements QuestionsService {
       logger.log({type: 'error', message: 'No access token set for the app. \nSet a token in app.config.ts'})
     }
 
-    return true // !(!token || token !== validToken);
+    return !(!token || token !== validToken);
   }
 
   async validateAnswer(questionId: number | string, answerId: number | string): Promise<boolean> {
