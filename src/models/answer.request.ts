@@ -6,6 +6,5 @@ export interface Answer {
 }
 
 export interface AnswerRequest extends Answer {
-  timestamp: number;
   token: string;
 }

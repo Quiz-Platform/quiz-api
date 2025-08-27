@@ -1,12 +1,15 @@
-import { AnswerRequest } from './answer.request';
+import { Answer } from './answer.request';
 
-export interface UserAnswer extends AnswerRequest {
-  createdAt: string;
+export interface AnswerEntry extends Answer {
   isCorrect: boolean;
 }
 
-export interface DatabaseService {
-  saveUserAnswer(userAnswer: UserAnswer): Promise<string>;
-  getUserQuizHistory(userId: string): Promise<UserAnswer[]>;
+export type DatabaseSchema = {
+  answers: AnswerEntry[];
+}
+
+export interface DatabaseServiceInterface {
+  saveUserAnswer(userAnswer: AnswerEntry): Promise<string>;
+  getUserQuizHistory(userId: string): Promise<AnswerEntry[]>;
   getQuizStatistics(): Promise<any>;
 }
