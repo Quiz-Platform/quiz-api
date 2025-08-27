@@ -1,20 +1,17 @@
 {
-  "answers": [
+  "sessions": [
     {
+      "sessionId": "24727082025",
       "telegramUser": "user123",
-      "questionId": 1,
-      "answerId": 1,
-      "isCorrect": true,
-      "id": "1756268478173",
-      "createdAt": "2025-08-27T04:21:18.173Z"
-    },
-    {
-      "telegramUser": "user123",
-      "questionId": 1,
-      "answerId": 1,
-      "isCorrect": true,
-      "id": "1756268596042",
-      "createdAt": "2025-08-27T04:23:16.042Z"
+      "answers": [
+        {
+          "id": "1756274297259",
+          "questionId": 2,
+          "answerId": 1,
+          "isCorrect": true,
+          "createdAt": "2025-08-27T05:58:17.259Z"
+        }
+      ]
     }
   ]
 }

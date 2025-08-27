@@ -1,5 +1,5 @@
 import express, { Request, Response, Router } from 'express';
-import { AnswerRequest } from '../models/answer.request';
+import { AnswerRequest } from '../models/answers.interface';
 import { AnswerEntry } from '../models/database.interface';
 import { DatabaseService } from '../services/database.service';
 import { MockQuestionsService } from '../services/mock-questions.service';
@@ -26,10 +26,10 @@ export class AnswersRouter {
 
   // POST /answers
   private async answerRouteHandler(req: Request, res: Response): Promise<Response> {
-    const { token, telegramUser, questionId, answerId, timestamp }: AnswerRequest = req.body;
+    const { token, telegramUser, questionId, answerId, sessionId }: AnswerRequest = req.body;
 
     const isTokenValid = await this.questionsService.validateToken(token);
-    if (!isTokenValid) {
+    if (!sessionId || !token || !isTokenValid) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
@@ -37,17 +37,15 @@ export class AnswersRouter {
       const isCorrect = await this.questionsService.validateAnswer(questionId, answerId);
 
       const userAnswer: AnswerEntry = {
-        telegramUser,
+        id: null,
         questionId,
         answerId,
         isCorrect,
-        timestamp,
+        createdAt: null,
       };
 
-      this.logger.log({ type: 'event', message: `Answer received ${answerId}` });
-      await this.databaseService.saveUserAnswer(userAnswer);
-      this.logger.log({ type: 'event', message: `Answer saved ${answerId}` });
-
+      this.logger.log({ type: 'event', message: `User ${telegramUser} submitted an answer id ${answerId} for question id ${questionId}` });
+      await this.databaseService.saveUserAnswer(sessionId, telegramUser, userAnswer);
       return res.json({ status: "ok", correct: isCorrect });
     } catch (error) {
       this.logger.log({ type: 'error', message: 'Error processing answer', error });
