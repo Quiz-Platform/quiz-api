@@ -36,6 +36,11 @@ export class AnswersRouter {
     try {
       const isCorrect = await this.questionsService.validateAnswer(questionId, answerId);
 
+      if (isCorrect === null) {
+        this.logger.log({ type: 'error', message: `Question or answer not found. \nquestionId: ${questionId}, answerId: ${answerId}` });
+        return res.status(400).json({ message: "Question or answer not found" });
+      }
+
       const userAnswer: AnswerEntry = {
         id: null,
         questionId,

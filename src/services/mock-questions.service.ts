@@ -1,4 +1,4 @@
-import * as data from './questions.mock.json';
+import data from './questions.mock.json';
 import { QuestionsService, Question } from '../models/questions.interface';
 import { AppConfig } from '../app-config';
 import { Logger } from '../utils/logger';
@@ -40,9 +40,23 @@ export class MockQuestionsService implements QuestionsService {
     return !(!token || token !== validToken);
   }
 
-  async validateAnswer(questionId: number | string, answerId: number | string): Promise<boolean> {
-    // TODO: validation
+  async validateAnswer(questionId: number | string, answerId: number | string): Promise<boolean | null> {
+    // returns true if the answer exists and is correct,
+    // returns false if the answer exists but is incorrect,
+    // returns null if either the question or the answer option does not exist
 
-    return true;
+    const question = await this.getQuestionById(questionId);
+    if (!question) {
+      logger.log({ type: 'error', message: `Question not found: id=${questionId}` });
+      return null;
+    }
+
+    const option = question.options.find(opt => opt.id === Number(answerId));
+    if (!option) {
+      logger.log({ type: 'error', message: `Answer not found: id=${answerId} in question ${questionId}` });
+      return null;
+    }
+
+    return option.isTrue;
   }
 }
