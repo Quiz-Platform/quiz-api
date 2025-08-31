@@ -52,7 +52,7 @@ export class AnswersRouter {
 
       this.logger.log({ type: 'event', message: `User ${telegramUser} submitted an answer id ${answerId} for question id ${questionId}` });
       await this.databaseService.saveUserAnswer(sessionId, telegramUser, userAnswer);
-      return res.json({ status: "ok", correct: isCorrect });
+      return res.json({ status: 'ok', correct: isCorrect });
     } catch (error) {
       this.logger.log({ type: 'error', message: 'Error processing answer', error });
 

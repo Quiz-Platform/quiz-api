@@ -36,12 +36,12 @@ The cache lifetime is 15 days by default and can be defined by setting the
 
 ## API Endpoints
 
-| Type | Route                                                              | Description                                |
-|------|--------------------------------------------------------------------|--------------------------------------------|
-| GET | `/api/questions/` [🔗](http://localhost:8080/api/questions/)       | Get all questions                          |
-| GET | `/api/questions/:id` [🔗](http://localhost:8080/api/questions/:id) | Get a specific question by ID (id: number) |
-| POST | `/api/answers`                                                     | Submit an answer for a question            |
-| POST | `/api/answers/stats`                                               | Gen quiz results by user and session id    |
+| Type | Route                                                              | Description                                | Successful response                      |
+|------|--------------------------------------------------------------------|--------------------------------------------|------------------------------------------|
+| GET  | `/api/questions/` [🔗](http://localhost:8080/api/questions/)       | Get all questions                          | `QuestionsApiRes<Question[]>`            |
+| GET  | `/api/questions/:id` [🔗](http://localhost:8080/api/questions/:id) | Get a specific question by ID (id: number) | `QuestionsApiRes<Question[]>`            |
+| POST | `/api/answers`                                                     | Submit an answer for a question            | 200 `{ status: 'ok', correct: boolean }` |  
+| POST | `/api/answers/stats`                                               | Get quiz results by user and session id    | `PlacementTestResults`                   |
 
 
 ### POST /api/answers

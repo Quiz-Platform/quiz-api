@@ -27,6 +27,10 @@ export class MockQuestionsService implements QuestionsService {
     return this.questions;
   }
 
+  async getQuestionsTotalCount(): Promise<number> {
+    return this.questions.length;
+  }
+
   async getQuestionById(id: number | string): Promise<Question | null> {
     return this.questions.find(q => q.id === Number(id)) || null;
   }
