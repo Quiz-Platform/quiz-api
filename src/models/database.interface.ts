@@ -1,4 +1,4 @@
-import { Answer } from './answers.interface';
+import { Answer, PlacementTestResults, QuizStats } from './answers.interface';
 
 export type DatabaseSchema = {
   sessions: SessionEntry[];
@@ -19,5 +19,6 @@ export interface AnswerEntry extends Answer {
 export interface DatabaseServiceInterface {
   saveUserAnswer(sessionId: string, telegramUser: string, userAnswer: AnswerEntry): Promise<string>;
   getUserQuizHistory(userId: string): Promise<AnswerEntry[]>;
-  getQuizStatistics(): Promise<any>;
+  getQuizStats(): Promise<QuizStats>;
+  getQuizStatByUserSession(sessionId: string, telegramUser: string): Promise<PlacementTestResults>;
 }

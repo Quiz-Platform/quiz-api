@@ -21,6 +21,7 @@ export class AnswersRouter {
 
   public registerRoutes(): Router {
     this.router.post("/answers", this.answerRouteHandler.bind(this));
+    this.router.post("/answers/stats", this.answerStatsRouteHandler.bind(this));
     return this.router;
   }
 
@@ -59,6 +60,30 @@ export class AnswersRouter {
         return res.status(400).json({ message: error.message });
       }
       return res.status(500).json({ message: "Failed to save answer" });
+    }
+  }
+
+  // POST /answers/stats
+  private async answerStatsRouteHandler(req: Request, res: Response): Promise<Response> {
+    const { token, telegramUser, sessionId }: AnswerRequest = req.body;
+
+    const isTokenValid = await this.questionsService.validateToken(token);
+    if (!sessionId || !token || !isTokenValid) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const statistics = await this.databaseService.getQuizStatByUserSession(sessionId, telegramUser);
+
+      if (!statistics) {
+        res.status(404).json({ message: "No statistics found for this user or session" });
+        return;
+      }
+
+      res.json(statistics);
+    } catch (error) {
+      this.logger.log({type: 'error', message: 'Error fetching statistics', error});
+      res.status(500).json({ message: "Internal server error" });
     }
   }
 }
