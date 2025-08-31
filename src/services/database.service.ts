@@ -54,7 +54,6 @@ export class DatabaseService implements DatabaseServiceInterface {
 
     if (session) {
       session.answers.push(answerWithId);
-      this.logger.log({ type: 'event', message: `Answer from user ${telegramUser} saved with id ${id} for session ${sessionId}` });
     } else {
       this.db.data!.sessions.push({
         sessionId,
@@ -64,7 +63,7 @@ export class DatabaseService implements DatabaseServiceInterface {
     }
 
     await this.db.write();
-    console.log('Answer saved with ID:', id);
+    this.logger.log({ type: 'event', message: `Answer saved with ID ${telegramUser} saved with id ${id} for session ${sessionId}` });
     return id;
   }
 
