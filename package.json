@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@types/lowdb": "^1.0.15",
+    "apicache": "^1.6.3",
     "body-parser": "^1.19.0",
     "cors": "^2.8.5",
     "dotenv": "^16.0.2",

@@ -1,6 +1,7 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
+import apicache from 'apicache';
 import { config } from './app-config';
 import questionsRouter from './endpoints/questions';
 import { AnswersRouter } from './endpoints/answers';
@@ -12,6 +13,9 @@ async function startServer() {
   app.use(cors());
   app.use(bodyParser.json());
   app.use(express.text({ type: 'text/plain' }));
+
+  const cache = apicache.middleware;
+  app.use(cache('30 days'));
 
   const databaseService = await DatabaseService.create();
 
