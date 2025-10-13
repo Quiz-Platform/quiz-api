@@ -1,8 +1,7 @@
 import { DatabaseSchema, DatabaseServiceInterface, AnswerEntry } from '../models/database.interface';
-import { Low } from 'lowdb';
-import { JSONFilePreset } from 'lowdb/node'
 import { Logger } from '../utils/logger';
 import { Grade, PlacementTestResults, ProficiencyLevel, QuizStats } from '../models/answers.interface';
+import type { Low } from 'lowdb';
 
 export class DatabaseService implements DatabaseServiceInterface {
   private db: Low<DatabaseSchema>;
@@ -14,6 +13,7 @@ export class DatabaseService implements DatabaseServiceInterface {
   }
 
   static async create(): Promise<DatabaseService> {
+    const { JSONFilePreset } = await import('lowdb/node');
     const db = await JSONFilePreset<DatabaseSchema>('db.json', { sessions: [] });
     return new DatabaseService(db);
   }
