@@ -43,3 +43,4 @@ Thumbs.db
 
 # Security
 .env
+.vercel
