@@ -1,15 +1,5 @@
 import { Answer, PlacementTestResults, QuizStats } from './answers.interface';
 
-export type DatabaseSchema = {
-  sessions: SessionEntry[];
-}
-
-export interface SessionEntry {
-  sessionId: string;
-  telegramUser: string;
-  answers: AnswerEntry[];
-}
-
 export interface AnswerEntry extends Answer {
   id: string;
   createdAt: string;

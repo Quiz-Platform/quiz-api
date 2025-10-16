@@ -1,21 +1,23 @@
-import { DatabaseSchema, DatabaseServiceInterface, AnswerEntry } from '../models/database.interface';
+import { DatabaseServiceInterface, AnswerEntry } from '../models/database.interface';
 import { Logger } from '../utils/logger';
 import { Grade, PlacementTestResults, ProficiencyLevel, QuizStats } from '../models/answers.interface';
-import type { Low } from 'lowdb';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import 'dotenv/config';
 
 export class DatabaseService implements DatabaseServiceInterface {
-  private db: Low<DatabaseSchema>;
+  private db: SupabaseClient;
   private logger: Logger;
 
-  constructor(db: Low<DatabaseSchema>) {
-    this.db = db;
+  constructor() {
+    this.db = createClient(
+      process.env.DATABASE_URL!,
+      process.env.SUPABASE_KEY!
+    );
     this.logger = new Logger();
   }
 
   static async create(): Promise<DatabaseService> {
-    const { JSONFilePreset } = await import('lowdb/node');
-    const db = await JSONFilePreset<DatabaseSchema>('db.json', { sessions: [] });
-    return new DatabaseService(db);
+    return new DatabaseService();
   }
 
   private _toFixed(num, decimals = 2): number {
@@ -42,44 +44,58 @@ export class DatabaseService implements DatabaseServiceInterface {
   }
 
   async saveUserAnswer(sessionId: string, telegramUser: string, userAnswer: AnswerEntry): Promise<string> {
-    await this.db.read();
-
-    const session = this.db.data!.sessions.find(s => s.sessionId === sessionId);
     const id = Date.now().toString();
-    const answerWithId: AnswerEntry = {
-      ...userAnswer,
-      id,
-      createdAt: new Date().toISOString(),
-    };
+    const createdAt = new Date().toISOString();
 
-    if (session) {
-      session.answers.push(answerWithId);
-    } else {
-      this.db.data!.sessions.push({
-        sessionId,
-        telegramUser,
-        answers: [answerWithId],
+    // Ensure session exists
+    const { data: existingSession } = await this.db
+      .from('sessions')
+      .select('id')
+      .eq('id', sessionId)
+      .maybeSingle();
+
+    if (!existingSession) {
+      await this.db.from('sessions').insert({
+        id: sessionId,
+        telegram_user: telegramUser,
       });
     }
 
-    await this.db.write();
-    this.logger.log({ type: 'event', message: `Answer saved with ID ${telegramUser} saved with id ${id} for session ${sessionId}` });
+    // Save answer
+    const { error } = await this.db.from('answers').insert({
+      id: Number(userAnswer.answerId) || Number(id),
+      session_id: sessionId,
+      question_id: userAnswer.questionId,
+      is_correct: userAnswer.isCorrect,
+      created_at: createdAt,
+    });
+
+    if (error) {
+      this.logger.log({ type: 'error', message: `Error saving answer: ${error.message}` });
+      throw error;
+    }
+
+    this.logger.log({ type: 'event', message: `Answer ${id} saved for ${telegramUser} in session ${sessionId}` });
     return id;
   }
 
   async getUserQuizHistory(userId: string): Promise<AnswerEntry[]> {
-    await this.db.read();
-    return this.db.data!.sessions
-      .filter(session => session.telegramUser === userId)
-      .flatMap(session => session.answers);
+    const { data, error } = await this.db
+      .from('sessions')
+      .select('id, answers(id, question_id, is_correct, created_at)')
+      .eq('telegram_user', userId);
+
+    if (error) throw error;
+
+    return data.flatMap((s: any) => s.answers);
   }
 
   async getQuizStats(): Promise<QuizStats> {
-    await this.db.read();
-    const allAnswers = this.db.data!.sessions.flatMap(session => session.answers);
+    const { data, error } = await this.db.from('answers').select('is_correct');
+    if (error) throw error;
 
-    const totalAnswers = allAnswers.length;
-    const correctAnswers = allAnswers.filter(a => a.isCorrect).length;
+    const totalAnswers = data.length;
+    const correctAnswers = data.filter(a => a.is_correct).length;
 
     return {
       totalAnswers,
@@ -88,19 +104,19 @@ export class DatabaseService implements DatabaseServiceInterface {
     };
   }
 
-  async getQuizStatByUserSession(sessionId: string, telegramUser: string): Promise<PlacementTestResults> {
-    await this.db.read();
-    const session = this.db.data!.sessions.find(
-      s => s.sessionId === sessionId && s.telegramUser === telegramUser
-    );
+  async getQuizStatByUserSession(sessionId: string, telegramUser: string): Promise<PlacementTestResults | undefined> {
+    const { data: session, error } = await this.db
+      .from('answers')
+      .select('is_correct')
+      .eq('session_id', sessionId);
 
     if (!session) {
       this.logger.log({ type: 'event', message: `Session not found for user ${telegramUser} with sessionId ${sessionId}`});
       return;
     }
 
-    const totalAnswers = session.answers.length;
-    const correctAnswers = session.answers.filter(a => a.isCorrect).length;
+    const totalAnswers = session.length;
+    const correctAnswers = session.filter(a => a.is_correct).length;
     const averageScore = totalAnswers > 0 ? this._toFixed((correctAnswers / totalAnswers) * 100) : 0;
 
     return {
