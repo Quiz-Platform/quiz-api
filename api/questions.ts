@@ -1,11 +1,11 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { Logger } from '../src/utils/logger';
-import { MockQuestionsService } from '../src/services/mock-questions.service';
 import { config } from '../src/app-config';
 import { Question, QuestionsApiRes } from '../src/models/questions.interface';
+import { SupabaseQuestionsService } from '../src/services/supabase-questions.service';
 
 const logger = new Logger();
-const questionsService = new MockQuestionsService(config);
+const questionsService = new SupabaseQuestionsService(config);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
