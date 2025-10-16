@@ -47,6 +47,14 @@ export class DatabaseService implements DatabaseServiceInterface {
   async saveUserAnswer(sessionId: string, telegramUser: string, userAnswer: AnswerEntry): Promise<string> {
     const id = userAnswer.id || Date.now().toString();
 
+    // Convert answerId to number safely
+    const answerId = userAnswer.answerId !== undefined ? Number(userAnswer.answerId) : null;
+
+    if (answerId !== null && isNaN(answerId)) {
+      this.logger.log({ type: 'error', message: `Invalid answerId: ${userAnswer.answerId}` });
+      this.logger.log({ type: 'error', message: 'answerId must be a number or null' });
+    }
+
     // Check if answer already exists to preserve created_at
     let createdAt = new Date().toISOString();
     const { data: existingAnswer, error: fetchError } = await this.db
@@ -83,7 +91,7 @@ export class DatabaseService implements DatabaseServiceInterface {
           id,
           session_id: sessionId,
           question_id: userAnswer.questionId,
-          answer_id: userAnswer.answerId,
+          answer_id: answerId,
           is_correct: userAnswer.isCorrect,
           created_at: createdAt,
         }],
