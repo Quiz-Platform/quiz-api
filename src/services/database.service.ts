@@ -83,20 +83,16 @@ export class DatabaseService implements DatabaseServiceInterface {
       if (error) this.logger.log({ type: 'error', message: `Error creating session: ${error.message}` });
     }
 
-    // Insert or update answer using upsert
     const { error: upsertError } = await this.db
       .from('answers')
-      .upsert(
-        [{
-          id,
-          session_id: sessionId,
-          question_id: userAnswer.questionId,
-          answer_id: answerId,
-          is_correct: userAnswer.isCorrect,
-          created_at: createdAt,
-        }],
-        { onConflict: 'id' }
-      );
+      .insert([{
+        session_id: sessionId,
+        question_id: userAnswer.questionId,
+        answer_id: answerId,
+        is_correct: userAnswer.isCorrect,
+        created_at: createdAt,
+      }])
+      .select('id');
 
     if (upsertError) this.logger.log({ type: 'error', message: `Error saving answer: ${upsertError.message}` });
 
