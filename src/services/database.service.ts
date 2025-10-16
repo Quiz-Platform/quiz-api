@@ -20,7 +20,7 @@ export class DatabaseService implements DatabaseServiceInterface {
     return new DatabaseService();
   }
 
-  private _toFixed(num, decimals = 2): number {
+  private _toFixed(num: number, decimals = 2): number {
     const factor = 10 ** decimals;
     return ((num * factor) - (num * factor % 1)) / factor;
   }
@@ -43,51 +43,66 @@ export class DatabaseService implements DatabaseServiceInterface {
     return 'C2';
   }
 
+  // Save a single user answer; update if answer id exists
   async saveUserAnswer(sessionId: string, telegramUser: string, userAnswer: AnswerEntry): Promise<string> {
-    const id = Date.now().toString();
+    const id = userAnswer.id || Date.now().toString();
     const createdAt = new Date().toISOString();
 
-    // Ensure session exists
-    const { data: existingSession } = await this.db
+    // Ensure the session exists
+    const { data: existingSession, error: sessionError } = await this.db
       .from('sessions')
       .select('id')
       .eq('id', sessionId)
       .maybeSingle();
 
+    if (sessionError) throw sessionError;
+
     if (!existingSession) {
-      await this.db.from('sessions').insert({
+      const { error } = await this.db.from('sessions').insert({
         id: sessionId,
         telegram_user: telegramUser,
       });
+      if (error) {
+        this.logger.log({ type: 'error', message: `${error.message}` });
+      }
+
+
     }
 
-    // Save answer
-    const { error } = await this.db.from('answers').insert({
-      id: Number(userAnswer.answerId) || Number(id),
-      session_id: sessionId,
-      question_id: userAnswer.questionId,
-      is_correct: userAnswer.isCorrect,
-      created_at: createdAt,
-    });
+    // Insert or update answer using upsert
+    const { error } = await this.db
+      .from('answers')
+      .upsert(
+        [{
+          id,
+          sessionId,
+          questionId: userAnswer.questionId,
+          answerId: userAnswer.answerId,
+          isCorrect: userAnswer.isCorrect,
+          createdAt,
+        }],
+        { onConflict: 'id' } // upsert on primary key
+      );
 
     if (error) {
       this.logger.log({ type: 'error', message: `Error saving answer: ${error.message}` });
       throw error;
     }
 
-    this.logger.log({ type: 'event', message: `Answer ${id} saved for ${telegramUser} in session ${sessionId}` });
+    this.logger.log({ type: 'event', message: `Answer ${id} saved/updated for user ${telegramUser} in session ${sessionId}` });
     return id;
   }
 
+  // Get all answers submitted by a user
   async getUserQuizHistory(userId: string): Promise<AnswerEntry[]> {
     const { data, error } = await this.db
-      .from('sessions')
-      .select('id, answers(id, question_id, is_correct, created_at)')
+      .from('answers')
+      .select('*')
       .eq('telegram_user', userId);
 
     if (error) throw error;
 
-    return data.flatMap((s: any) => s.answers);
+    return data as AnswerEntry[];
   }
 
   async getQuizStats(): Promise<QuizStats> {
@@ -105,24 +120,23 @@ export class DatabaseService implements DatabaseServiceInterface {
   }
 
   async getQuizStatByUserSession(sessionId: string, telegramUser: string): Promise<PlacementTestResults | undefined> {
-    const { data: session, error } = await this.db
+    const { data, error } = await this.db
       .from('answers')
-      .select('is_correct')
-      .eq('session_id', sessionId);
+      .select('*')
+      .eq('session_id', sessionId)
+      .eq('telegram_user', telegramUser);
 
-    if (!session) {
-      this.logger.log({ type: 'event', message: `Session not found for user ${telegramUser} with sessionId ${sessionId}`});
-      return;
-    }
+    if (error) throw error;
+    if (!data || data.length === 0) return;
 
-    const totalAnswers = session.length;
-    const correctAnswers = session.filter(a => a.is_correct).length;
+    const totalAnswers = data.length;
+    const correctAnswers = data.filter(a => a.is_correct).length;
     const averageScore = totalAnswers > 0 ? this._toFixed((correctAnswers / totalAnswers) * 100) : 0;
 
     return {
       totalAnswers,
       correctAnswers,
-      averageScore: averageScore,
+      averageScore,
       score: this._getScore(averageScore),
       proficiencyLevel: this._getProficiencyLevel(averageScore)
     };
