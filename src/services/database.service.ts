@@ -46,7 +46,17 @@ export class DatabaseService implements DatabaseServiceInterface {
   // Save a single user answer; update if answer id exists
   async saveUserAnswer(sessionId: string, telegramUser: string, userAnswer: AnswerEntry): Promise<string> {
     const id = userAnswer.id || Date.now().toString();
-    const createdAt = new Date().toISOString();
+
+    // Check if answer already exists to preserve created_at
+    let createdAt = new Date().toISOString();
+    const { data: existingAnswer, error: fetchError } = await this.db
+      .from('answers')
+      .select('created_at')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchError) this.logger.log({ type: 'error', message: `Error fetching existing answer: ${fetchError.message}` });
+    if (existingAnswer?.created_at) createdAt = existingAnswer.created_at;
 
     // Ensure the session exists
     const { data: existingSession, error: sessionError } = await this.db
@@ -55,39 +65,32 @@ export class DatabaseService implements DatabaseServiceInterface {
       .eq('id', sessionId)
       .maybeSingle();
 
-    if (sessionError) throw sessionError;
+    if (sessionError) this.logger.log({ type: 'error', message: `Error checking session: ${sessionError.message}` });
 
     if (!existingSession) {
       const { error } = await this.db.from('sessions').insert({
         id: sessionId,
         telegram_user: telegramUser,
       });
-      if (error) {
-        this.logger.log({ type: 'error', message: `${error.message}` });
-      }
-
-
+      if (error) this.logger.log({ type: 'error', message: `Error creating session: ${error.message}` });
     }
 
     // Insert or update answer using upsert
-    const { error } = await this.db
+    const { error: upsertError } = await this.db
       .from('answers')
       .upsert(
         [{
           id,
-          sessionId,
-          questionId: userAnswer.questionId,
-          answerId: userAnswer.answerId,
-          isCorrect: userAnswer.isCorrect,
-          createdAt,
+          session_id: sessionId,
+          question_id: userAnswer.questionId,
+          answer_id: userAnswer.answerId,
+          is_correct: userAnswer.isCorrect,
+          created_at: createdAt,
         }],
-        { onConflict: 'id' } // upsert on primary key
+        { onConflict: 'id' }
       );
 
-    if (error) {
-      this.logger.log({ type: 'error', message: `Error saving answer: ${error.message}` });
-      throw error;
-    }
+    if (upsertError) this.logger.log({ type: 'error', message: `Error saving answer: ${upsertError.message}` });
 
     this.logger.log({ type: 'event', message: `Answer ${id} saved/updated for user ${telegramUser} in session ${sessionId}` });
     return id;
@@ -100,23 +103,21 @@ export class DatabaseService implements DatabaseServiceInterface {
       .select('*')
       .eq('telegram_user', userId);
 
-    if (error) throw error;
+    if (error) this.logger.log({ type: 'error', message: `Error fetching quiz history: ${error.message}` });
 
-    return data as AnswerEntry[];
+    return (data || []) as AnswerEntry[];
   }
 
   async getQuizStats(): Promise<QuizStats> {
     const { data, error } = await this.db.from('answers').select('is_correct');
-    if (error) throw error;
+    if (error) this.logger.log({ type: 'error', message: `Error fetching quiz stats: ${error.message}` });
 
-    const totalAnswers = data.length;
-    const correctAnswers = data.filter(a => a.is_correct).length;
+    const answers = data || [];
+    const totalAnswers = answers.length;
+    const correctAnswers = answers.filter(a => a.is_correct).length;
+    const averageScore = totalAnswers > 0 ? this._toFixed((correctAnswers / totalAnswers) * 100) : 0;
 
-    return {
-      totalAnswers,
-      correctAnswers,
-      averageScore: totalAnswers > 0 ? this._toFixed((correctAnswers / totalAnswers) * 100) : 0
-    };
+    return { totalAnswers, correctAnswers, averageScore };
   }
 
   async getQuizStatByUserSession(sessionId: string, telegramUser: string): Promise<PlacementTestResults | undefined> {
@@ -126,7 +127,8 @@ export class DatabaseService implements DatabaseServiceInterface {
       .eq('session_id', sessionId)
       .eq('telegram_user', telegramUser);
 
-    if (error) throw error;
+    if (error) this.logger.log({ type: 'error', message: `Error fetching session stats: ${error.message}` });
+
     if (!data || data.length === 0) return;
 
     const totalAnswers = data.length;
@@ -138,7 +140,7 @@ export class DatabaseService implements DatabaseServiceInterface {
       correctAnswers,
       averageScore,
       score: this._getScore(averageScore),
-      proficiencyLevel: this._getProficiencyLevel(averageScore)
+      proficiencyLevel: this._getProficiencyLevel(averageScore),
     };
   }
 }
