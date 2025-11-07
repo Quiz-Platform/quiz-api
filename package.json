@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "@supabase/supabase-js": "^2.75.0",
+    "@supabase/supabase-js": "^2.80.0",
     "@types/lowdb": "^1.0.15",
     "@vercel/node": "^5.3.24",
     "apicache": "^1.6.3",

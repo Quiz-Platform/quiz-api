@@ -45,8 +45,6 @@ export class DatabaseService implements DatabaseServiceInterface {
 
   // Save a single user answer; update if answer id exists
   async saveUserAnswer(sessionId: string, telegramUser: string, userAnswer: AnswerEntry): Promise<string> {
-    const id = userAnswer.id || Date.now().toString();
-
     // Convert answerId to number safely
     const answerId = userAnswer.answerId !== undefined ? Number(userAnswer.answerId) : null;
 
@@ -55,17 +53,6 @@ export class DatabaseService implements DatabaseServiceInterface {
       this.logger.log({ type: 'error', message: 'answerId must be a number or null' });
     }
 
-    // Check if answer already exists to preserve created_at
-    let createdAt = new Date().toISOString();
-    const { data: existingAnswer, error: fetchError } = await this.db
-      .from('answers')
-      .select('created_at')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (fetchError) this.logger.log({ type: 'error', message: `Error fetching existing answer: ${fetchError.message}` });
-    if (existingAnswer?.created_at) createdAt = existingAnswer.created_at;
-
     // Ensure the session exists
     const { data: existingSession, error: sessionError } = await this.db
       .from('sessions')
@@ -73,65 +60,95 @@ export class DatabaseService implements DatabaseServiceInterface {
       .eq('id', sessionId)
       .maybeSingle();
 
-    if (sessionError) this.logger.log({ type: 'error', message: `Error checking session: ${sessionError.message}` });
-
-    if (!existingSession) {
-      const { error } = await this.db.from('sessions').insert({
-        id: sessionId,
-        telegram_user: telegramUser,
-      });
-      if (error) this.logger.log({ type: 'error', message: `Error creating session: ${error.message}` });
+    if (sessionError) {
+      this.logger.log({ type: 'error', message: `Error fetching session: ${sessionError.message}` });
+      // Return early if we can't even check for a session. The ID from the answer is returned for logging.
+      return userAnswer.id;
     }
 
-    const { error: upsertError } = await this.db
+    if (!existingSession) {
+      const { error: createError } = await this.db
+        .from('sessions')
+        .insert([{ id: sessionId, telegram_user: telegramUser }]);
+
+      if (createError) {
+        this.logger.log({ type: 'error', message: `Error creating session: ${createError.message}` });
+      }
+    }
+
+    // Re-instating upsert to prevent primary key violations on updates
+    const { error } = await this.db
       .from('answers')
-      .insert([{
+      .upsert([{
+        id: userAnswer.id,
         session_id: sessionId,
         question_id: userAnswer.questionId,
         answer_id: answerId,
         is_correct: userAnswer.isCorrect,
-        created_at: createdAt,
-      }])
-      .select('id');
+        created_at: userAnswer.createdAt,
+      }], { onConflict: 'id' });
 
-    if (upsertError) this.logger.log({ type: 'error', message: `Error saving answer: ${upsertError.message}` });
-
-    this.logger.log({ type: 'event', message: `Answer ${id} saved/updated for user ${telegramUser} in session ${sessionId}` });
-    return id;
+    if (error) {
+      this.logger.log({ type: 'error', message: `Error saving answer: ${error.message}` });
+    } else {
+      this.logger.log({ type: 'event', message: `Answer ${userAnswer.id} saved/updated for user ${telegramUser} in session ${sessionId}` });
+    }
+    return userAnswer.id;
   }
 
   // Get all answers submitted by a user
   async getUserQuizHistory(userId: string): Promise<AnswerEntry[]> {
     const { data, error } = await this.db
       .from('answers')
-      .select('*')
-      .eq('telegram_user', userId);
+      .select('id, session_id, question_id, answer_id, is_correct, created_at, sessions!inner(telegram_user)')
+      .eq('sessions.telegram_user', userId);
 
-    if (error) this.logger.log({ type: 'error', message: `Error fetching quiz history: ${error.message}` });
+    if (error) {
+      this.logger.log({ type: 'error', message: `Error fetching user quiz history: ${error.message}` });
+      return [];
+    }
 
-    return (data || []) as AnswerEntry[];
+    return (data || []).map((row) => ({
+      id: row.id,
+      sessionId: row.session_id,
+      questionId: row.question_id,
+      answerId: row.answer_id,
+      isCorrect: row.is_correct,
+      createdAt: row.created_at,
+      telegramUser: row.sessions?.[0]?.telegram_user
+    })) as AnswerEntry[];
   }
+
 
   async getQuizStats(): Promise<QuizStats> {
     const { data, error } = await this.db.from('answers').select('is_correct');
-    if (error) this.logger.log({ type: 'error', message: `Error fetching quiz stats: ${error.message}` });
+    if (error) {
+      this.logger.log({ type: 'error', message: `Error fetching quiz stats: ${error.message}` });
+      return { totalAnswers: 0, correctAnswers: 0, averageScore: 0 };
+    }
 
     const answers = data || [];
     const totalAnswers = answers.length;
     const correctAnswers = answers.filter(a => a.is_correct).length;
     const averageScore = totalAnswers > 0 ? this._toFixed((correctAnswers / totalAnswers) * 100) : 0;
 
-    return { totalAnswers, correctAnswers, averageScore };
+    return {
+      totalAnswers,
+      correctAnswers,
+      averageScore,
+    };
   }
 
   async getQuizStatByUserSession(sessionId: string, telegramUser: string): Promise<PlacementTestResults | undefined> {
     const { data, error } = await this.db
       .from('answers')
-      .select('*')
+      .select('is_correct, sessions!inner(telegram_user)')
       .eq('session_id', sessionId)
-      .eq('telegram_user', telegramUser);
+      .eq('sessions.telegram_user', telegramUser);
 
-    if (error) this.logger.log({ type: 'error', message: `Error fetching session stats: ${error.message}` });
+    if (error) {
+      this.logger.log({ type: 'error', message: `Error fetching session stats: ${error.message}` });
+    }
 
     if (!data || data.length === 0) return;
 
