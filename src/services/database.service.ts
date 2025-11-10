@@ -44,13 +44,13 @@ export class DatabaseService implements DatabaseServiceInterface {
   }
 
   // Save a single user answer; update if answer id exists
-  async saveUserAnswer(sessionId: string, telegramUser: string, userAnswer: AnswerEntry): Promise<string> {
+  async createUserAnswer(sessionId: string, telegramUser: string, userAnswer: AnswerEntry): Promise<string> {
     // Convert answerId to number safely
     const answerId = userAnswer.answerId !== undefined ? Number(userAnswer.answerId) : null;
 
     if (answerId !== null && isNaN(answerId)) {
       this.logger.log({ type: 'error', message: `Invalid answerId: ${userAnswer.answerId}` });
-      this.logger.log({ type: 'error', message: 'answerId must be a number or null' });
+      this.logger.log({ type: 'error', message: 'answerId must be a number' });
     }
 
     // Ensure the session exists
@@ -76,7 +76,8 @@ export class DatabaseService implements DatabaseServiceInterface {
       }
     }
 
-    // Re-instating upsert to prevent primary key violations on updates
+    // Re-instating upsert to prevent primary key violations
+    // on updates when a bot is making a few POST requests
     const { error } = await this.db
       .from('answers')
       .upsert([{
@@ -94,6 +95,14 @@ export class DatabaseService implements DatabaseServiceInterface {
       this.logger.log({ type: 'event', message: `Answer ${userAnswer.id} saved/updated for user ${telegramUser} in session ${sessionId}` });
     }
     return userAnswer.id;
+  }
+
+  // Update entry adding the check result
+  async updateUserAnswer(answerId: number, isCorrect: boolean): Promise<void> {
+    await this.db
+      .from('answers')
+      .update({ 'is_correct': isCorrect })
+      .eq('id', answerId);
   }
 
   // Get all answers submitted by a user

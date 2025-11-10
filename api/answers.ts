@@ -6,6 +6,7 @@ import { AnswerRequest } from '../src/models/answers.interface';
 import { AnswerEntry } from '../src/models/database.interface';
 import { SupabaseQuestionsService } from '../src/services/supabase-questions.service';
 import {AnswersWorker} from '../src/workers/answers.worker';
+import { createId } from '@paralleldrive/cuid2';
 
 const questionsService = new SupabaseQuestionsService(config);
 const logger = new Logger();
@@ -25,15 +26,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const databaseService = await DatabaseService.create();
     const userAnswer: AnswerEntry = {
-      id: null,
+      id: createId(),
       questionId,
       answerId,
       isCorrect: null,
-      createdAt: null,
+      createdAt: new Date().toISOString(),
     };
 
     logger.log({ type: "event", message: `User ${telegramUser} answered q${questionId} with a${answerId}` });
-    await databaseService.saveUserAnswer(sessionId, telegramUser, userAnswer);
+    await databaseService.createUserAnswer(sessionId, telegramUser, userAnswer);
     const worker = new AnswersWorker();
     await worker.process(req.body as AnswerRequest);
 

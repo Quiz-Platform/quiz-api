@@ -7,7 +7,7 @@ export interface AnswerEntry extends Answer {
 }
 
 export interface DatabaseServiceInterface {
-  saveUserAnswer(sessionId: string, telegramUser: string, userAnswer: AnswerEntry): Promise<string>;
+  createUserAnswer(sessionId: string, telegramUser: string, userAnswer: AnswerEntry): Promise<string>;
   getUserQuizHistory(userId: string): Promise<AnswerEntry[]>;
   getQuizStats(): Promise<QuizStats>;
   getQuizStatByUserSession(sessionId: string, telegramUser: string): Promise<PlacementTestResults | undefined>;

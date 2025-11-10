@@ -2,9 +2,7 @@ import { Logger } from '../utils/logger';
 import { config } from '../app-config';
 import { AnswerRequest } from '../models/answers.interface';
 import { SupabaseQuestionsService } from '../services/supabase-questions.service';
-import { AnswerEntry } from '../models/database.interface';
 import { DatabaseService } from '../services/database.service';
-import { createId } from '@paralleldrive/cuid2';
 
 export class AnswersWorker {
   private logger: Logger;
@@ -27,16 +25,8 @@ export class AnswersWorker {
         return;
       }
 
-      const userAnswer: AnswerEntry = {
-        id: createId(),
-        questionId,
-        answerId,
-        isCorrect,
-        createdAt: new Date().toISOString(),
-      };
-
-      await databaseService.saveUserAnswer(sessionId, telegramUser, userAnswer);
-      this.logger.log({ type: 'event', message: `Answer saved for user ${telegramUser}` });
+      await databaseService.updateUserAnswer(answerId, isCorrect);
+      this.logger.log({ type: 'event', message: `Answer ${answerId} is checked for user ${telegramUser}` });
     } catch (err: any) {
       this.logger.log({ type: 'error', message: 'Worker processing failed', error: err });
     }
