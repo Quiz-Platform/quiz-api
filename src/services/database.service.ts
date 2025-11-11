@@ -43,14 +43,14 @@ export class DatabaseService implements DatabaseServiceInterface {
     return 'C2';
   }
 
-  // Save a single user answer; update if answer id exists
-  async createUserAnswer(sessionId: string, telegramUser: string, userAnswer: AnswerEntry): Promise<string> {
+  async createUserAnswer(sessionId: string, telegramUser: string, userAnswer: Omit<AnswerEntry, 'id'>): Promise<number | null> {
     // Convert answerId to number safely
     const answerId = userAnswer.answerId !== undefined ? Number(userAnswer.answerId) : null;
 
     if (answerId !== null && isNaN(answerId)) {
       this.logger.log({ type: 'error', message: `Invalid answerId: ${userAnswer.answerId}` });
       this.logger.log({ type: 'error', message: 'answerId must be a number' });
+      return null;
     }
 
     // Ensure the session exists
@@ -62,8 +62,7 @@ export class DatabaseService implements DatabaseServiceInterface {
 
     if (sessionError) {
       this.logger.log({ type: 'error', message: `Error fetching session: ${sessionError.message}` });
-      // Return early if we can't even check for a session. The ID from the answer is returned for logging.
-      return userAnswer.id;
+      return null;
     }
 
     if (!existingSession) {
@@ -76,25 +75,29 @@ export class DatabaseService implements DatabaseServiceInterface {
       }
     }
 
-    // Re-instating upsert to prevent primary key violations
-    // on updates when a bot is making a few POST requests
-    const { error } = await this.db
+    const { data, error } = await this.db
       .from('answers')
-      .upsert([{
-        id: userAnswer.id,
+      .insert({
         session_id: sessionId,
         question_id: userAnswer.questionId,
         answer_id: answerId,
         is_correct: userAnswer.isCorrect,
         created_at: userAnswer.createdAt,
-      }], { onConflict: 'id' });
+      })
+      .select('id')
+      .single();
 
     if (error) {
       this.logger.log({ type: 'error', message: `Error saving answer: ${error.message}` });
-    } else {
-      this.logger.log({ type: 'event', message: `Answer ${userAnswer.id} saved/updated for user ${telegramUser} in session ${sessionId}` });
+      return null;
     }
-    return userAnswer.id;
+
+    const newId = data?.id;
+    if (newId) {
+      this.logger.log({ type: 'event', message: `Answer ${newId} saved for user ${telegramUser} in session ${sessionId}` });
+    }
+
+    return newId ?? null;
   }
 
   // Update entry adding the check result

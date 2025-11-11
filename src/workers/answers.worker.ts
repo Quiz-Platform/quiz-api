@@ -13,7 +13,7 @@ export class AnswersWorker {
     this.questionsService = new SupabaseQuestionsService(config);
   }
 
-  async process(payload: AnswerRequest): Promise<void> {
+  async process(payload: AnswerRequest, newAnswerId: number): Promise<void> {
     const { telegramUser, questionId, answerId, sessionId } = payload;
 
     try {
@@ -25,8 +25,8 @@ export class AnswersWorker {
         return;
       }
 
-      await databaseService.updateUserAnswer(answerId, isCorrect);
-      this.logger.log({ type: 'event', message: `Answer ${answerId} is checked for user ${telegramUser}` });
+      await databaseService.updateUserAnswer(newAnswerId, isCorrect);
+      this.logger.log({ type: 'event', message: `Answer ${newAnswerId} is checked for user ${telegramUser}` });
     } catch (err: any) {
       this.logger.log({ type: 'error', message: 'Worker processing failed', error: err });
     }
