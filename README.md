@@ -130,3 +130,9 @@ Request body example
   "telegramUser": "user123"
 }
 ```
+
+## Webhooks
+
+### api/webhooks/telegram-bot
+
+https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://your-app.vercel.app/api/telegram-bot
