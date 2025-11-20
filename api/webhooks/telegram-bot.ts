@@ -1,35 +1,39 @@
-import {VercelRequest, VercelResponse} from '@vercel/node';
+import { VercelRequest, VercelResponse } from '@vercel/node';
 import { config } from '../../src/app-config';
 import { Question } from '../../src/models/questions.interface';
 import { SupabaseQuestionsService } from '../../src/services/supabase-questions.service';
 import { DatabaseService } from '../../src/services/database.service';
 import { Logger } from '../../src/utils/logger';
-import {AnswersWorker} from '../../src/workers/answers.worker';
-import {AnswerRequest} from '../../src/models/answers.interface';
-import {Context} from 'telegraf';
+import { AnswersWorker } from '../../src/workers/answers.worker';
+import { AnswerRequest } from '../../src/models/answers.interface';
+import { Context } from 'telegraf';
+import { CallbackQuery } from 'telegraf/typings/core/types/typegram';
 
-/**
- * Global variables and constants
- */
 const logger = new Logger();
-let CHAT_ID: number;
-let USER: string;
-let SESSION_ID: string;
-let TOTAL_QUESTIONS: number;
 
 /**
  * Init database service
  */
-let databaseService: DatabaseService | null = null;
+let _databaseService: DatabaseService | null = null;
 async function getDb(): Promise<DatabaseService> {
-  if (!databaseService) {
-    databaseService = await DatabaseService.create();
+  if (!_databaseService) {
+    _databaseService = await DatabaseService.create();
   }
-  return databaseService;
+  return _databaseService;
 }
 
 const questionsService = new SupabaseQuestionsService(config);
 const telegramBot = config.bot;
+
+/**
+ * Global runtime state (kept intentionally simple).
+ * USER is telegramUser (username or id as string).
+ */
+let CHAT_ID: number | null = null;
+let USER: string | null = null; // telegramUser
+let SESSION_ID: string | null = null;
+let CURRENT_QUESTION_ID: number | null = null;
+let TOTAL_QUESTIONS: number | null = null;
 
 enum botCommands {
   START = 'start',
@@ -59,7 +63,7 @@ async function helloMessage(chatId): Promise<void> {
 /**
  * Save question
  */
-async function saveQuestion(ctx: Context<any> | Context, payload) {
+async function saveQuestion(ctx: Context<any> | Context, payload: AnswerRequest): Promise<void> {
   if (!payload) return;
   const { questionId, answerId, telegramUser, token, sessionId } = payload;
 
@@ -68,17 +72,23 @@ async function saveQuestion(ctx: Context<any> | Context, payload) {
     message: `Got answer ${answerId} for question ${questionId} from user ${telegramUser}`
   });
 
+  const db = await getDb();
+
   logger.log({ type: "event", message: `User ${telegramUser} answered q${questionId} with a${answerId}` });
-  const newAnswerId = await databaseService.createUserAnswer(sessionId, telegramUser, {
+  const userAnswer = {
     questionId,
     answerId,
     isCorrect: null,
-    createdAt: `${new Date().toISOString()}`,
-  });
+    createdAt: new Date().toISOString(),
+  };
+
+  const newAnswerId = await db.createUserAnswer(sessionId, telegramUser, userAnswer);
 
   if (newAnswerId) {
     const worker = new AnswersWorker();
-    await worker.process(payload as AnswerRequest, newAnswerId);
+    await worker.process(payload, newAnswerId);
+  } else {
+    logger.log({ type: 'error', message: 'createUserAnswer returned null/failed' });
   }
 }
 
@@ -86,81 +96,135 @@ async function saveQuestion(ctx: Context<any> | Context, payload) {
  * Register bot handlers
  */
 function registerBot(): void {
-  telegramBot.command(botCommands.START, async (ctx) => {
-    CHAT_ID = ctx.chat.id
+  telegramBot.command(botCommands.START, async (ctx: Context): Promise<void> => {
+    CHAT_ID = ctx.chat?.id ?? null;
+    if (CHAT_ID === null) return;
     await helloMessage(CHAT_ID);
   });
 
   // Set initial state
-  telegramBot.action(botTriggers.START, async (ctx) => {
+  telegramBot.action(botTriggers.START, async (ctx: Context): Promise<void> => {
     await ctx.answerCbQuery();
-    const chatId = CHAT_ID.toString();
-    const user = ctx.update.callback_query.from;
+
+    CHAT_ID = ctx.chat?.id ?? null;
+    if (CHAT_ID === null) return;
+
+    const user = "callback_query" in ctx.update
+      ? ctx.update.callback_query.from
+      : ctx.from!;
+
+    USER = user?.username ?? String(user?.id ?? CHAT_ID);
+    // Build session id following your current approach (you can change to your real logic)
+    SESSION_ID = `${USER}_${CHAT_ID}_${Date.now()}`;
+    CURRENT_QUESTION_ID = 0;
 
     const db = await getDb();
-    await db.setUserProgress(chatId, chatId, 1);
 
-    await ctx.reply("Всего в тесте 30 вопросов 🤩\nВыбери правильный ответ⬇");
-    await sendQuizQuestionToChat(chatId, 1);
+    // store initial progress: sessionId, telegramUser, question number
+    await db.setUserProgress(SESSION_ID, USER, CURRENT_QUESTION_ID);
 
-    SESSION_ID = `${user.id}${ctx.chat.id}${new Date().toISOString()}`;
+    await ctx.reply('Всего в тесте 30 вопросов 🤩\nВыбери правильный ответ⬇');
+
+    await sendQuizQuestionToChat(String(CHAT_ID), CURRENT_QUESTION_ID);
   });
 
-  // Callback query trigger handler
-  telegramBot.on('callback_query', async (ctx) => {
-    const query = ctx.callbackQuery;
-    if (!query || !('data' in query)) return;
-    await ctx.answerCbQuery();
-    // @ts-ignore
-    const answerId = Number(ctx.callbackQuery.data);
-    const chatId = ctx.chat.id.toString();
-    const user = ctx.update.callback_query.from;
-    USER = user.username ?? user.id.toString();
+  telegramBot.on('callback_query', async (ctx: Context): Promise<void> => {
+    const query = ctx.callbackQuery as CallbackQuery | undefined;
+    if (!query) return;
 
-    const currentQuestionId = await databaseService.getUserProgress(chatId);
-
-
-    const payload = {
-      questionId: currentQuestionId,
-      answerId,
-      USER,
-      token: config.apiToken,
-      sessionId: SESSION_ID,
-    };
-
-    await saveQuestion(ctx, payload);
-
-    TOTAL_QUESTIONS = await questionsService.getQuestionsTotalCount();
-    const nextQuestionId = currentQuestionId + 1;
-
-    if (nextQuestionId > TOTAL_QUESTIONS) {
-      await sendQuizFinishMessage(chatId);
-      await sendQuizResultsMessage(chatId, SESSION_ID, USER);
-    } else {
-      await sendQuizQuestionToChat(chatId, nextQuestionId);
+    // Narrow callback query to DataCallbackQuery by checking data existence
+    if ((query as any).data === undefined) {
+      await ctx.answerCbQuery('Вместо текста, пожалуйста, выберите один из вариантов');
+      return;
     }
 
-    await databaseService.setUserProgress(chatId, chatId, nextQuestionId);
+    await ctx.answerCbQuery();
+
+    // ensure CHAT_ID / USER / SESSION_ID available; try to restore from DB if missing
+    if (!CHAT_ID) {
+      CHAT_ID = Number(ctx.callbackQuery?.message?.chat?.id ?? null);
+      if (!CHAT_ID) return;
+    }
+
+    if (!USER) {
+      const from = ctx.callbackQuery?.from;
+      USER = from?.username ?? String(from?.id ?? CHAT_ID);
+    }
+
+    if (!SESSION_ID) {
+      // keep your session id construction consistent with start_quiz flow;
+      // fallback to combination if not set
+      SESSION_ID = `${USER}_${CHAT_ID}_${Date.now()}`;
+    }
+
+    // parse answer id safely
+    const rawData = (query as any).data;
+    const answerId = Number(rawData);
+    if (Number.isNaN(answerId)) {
+      logger.log({ type: 'error', message: `Invalid answerId payload: ${rawData}` });
+      return;
+    }
+
+    // Restore CURRENT_QUESTION_ID from DB if missing
+    const db = await getDb();
+    if (CURRENT_QUESTION_ID == null) {
+      const persisted = await db.getUserProgress(SESSION_ID);
+      if (persisted == null) {
+        // if still null, fallback to 0
+        CURRENT_QUESTION_ID = 0;
+      } else {
+        CURRENT_QUESTION_ID = persisted;
+      }
+    }
+
+    const payload: AnswerRequest = {
+      timestamp: Math.floor(Date.now() / 1000),
+      sessionId: SESSION_ID,
+      telegramUser: USER,
+      questionId: CURRENT_QUESTION_ID!,
+      answerId,
+      token: config.apiToken,
+    };
+
+    // save answer and run worker to check user's response
+    await saveQuestion(ctx, payload);
+
+    // compute totals & progress
+    TOTAL_QUESTIONS = TOTAL_QUESTIONS ?? (await questionsService.getQuestionsTotalCount());
+    const nextQuestionId = (CURRENT_QUESTION_ID ?? 0) + 1;
+
+    if ((CURRENT_QUESTION_ID ?? 0) >= (TOTAL_QUESTIONS - 1)) {
+      // last question answered
+      await sendQuizFinishMessage(String(CHAT_ID));
+      await sendQuizResultsMessage(String(CHAT_ID), SESSION_ID, USER);
+      // clear session state (optional)
+      CURRENT_QUESTION_ID = null;
+      SESSION_ID = null;
+      USER = null;
+      CHAT_ID = null;
+      return;
+    }
+
+    // persist next question and advance
+    await db.setUserProgress(SESSION_ID, USER, nextQuestionId);
+    CURRENT_QUESTION_ID = nextQuestionId;
+
+    await sendQuizQuestionToChat(String(CHAT_ID), nextQuestionId);
   });
 }
 
 /**
- * Send single question
+ * Send a single question to chat
  */
 async function sendQuizQuestionToChat(chatId: string, questionId: number): Promise<void> {
-  logger.log({
-    type: 'event',
-    message: `Sending question ${questionId} to chat ${chatId}`
-  });
+  logger.log({ type: 'event', message: `Sending question ${questionId} to chat ${chatId}` });
 
   const question: Question = await questionsService.getQuestionById(questionId);
 
   await telegramBot.telegram.sendMessage(chatId, question.text, {
     reply_markup: {
-      inline_keyboard: question.options.map((o) => [
-        { text: o.text, callback_data: o.id.toString() }
-      ])
-    }
+      inline_keyboard: question.options.map((o) => [{ text: o.text, callback_data: o.id.toString() }]),
+    },
   });
 }
 
@@ -179,7 +243,8 @@ async function sendQuizResultsMessage(
   sessionId: string,
   telegramUser: string
 ): Promise<void> {
-  const stats = await databaseService.getQuizStatByUserSession(sessionId, telegramUser);
+  const db = await getDb();
+  const stats = await db.getQuizStatByUserSession(sessionId, telegramUser);
 
   if (!stats) {
     await telegramBot.telegram.sendMessage(
@@ -189,12 +254,12 @@ async function sendQuizResultsMessage(
     return;
   }
 
+  // Use TOTAL_QUESTIONS that was computed earlier; fallback to DB count if missing
+  const total = TOTAL_QUESTIONS ?? (await questionsService.getQuestionsTotalCount());
   const { correctAnswers, proficiencyLevel } = stats;
 
   const resultMessage =
-    `🎉 Вы прошли тест!\n\n` +
-    `Правильных ответов: ${correctAnswers} из ${TOTAL_QUESTIONS}\n` +
-    `Ваш уровень: ${proficiencyLevel}`;
+    `🎉 Вы прошли тест!\n\n` + `Правильных ответов: ${correctAnswers} из ${total}\n` + `Ваш уровень: ${proficiencyLevel}`;
 
   await telegramBot.telegram.sendMessage(chatId, resultMessage);
 }
