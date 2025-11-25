@@ -1,24 +1,26 @@
-import { DatabaseSchema, DatabaseServiceInterface, AnswerEntry } from '../models/database.interface';
-import { Low } from 'lowdb';
-import { JSONFilePreset } from 'lowdb/node'
+import { DatabaseServiceInterface, AnswerEntry } from '../models/database.interface';
 import { Logger } from '../utils/logger';
 import { Grade, PlacementTestResults, ProficiencyLevel, QuizStats } from '../models/answers.interface';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import 'dotenv/config';
 
 export class DatabaseService implements DatabaseServiceInterface {
-  private db: Low<DatabaseSchema>;
+  private db: SupabaseClient;
   private logger: Logger;
 
-  constructor(db: Low<DatabaseSchema>) {
-    this.db = db;
+  constructor() {
+    this.db = createClient(
+      process.env.DATABASE_URL!,
+      process.env.SUPABASE_KEY!
+    );
     this.logger = new Logger();
   }
 
   static async create(): Promise<DatabaseService> {
-    const db = await JSONFilePreset<DatabaseSchema>('db.json', { sessions: [] });
-    return new DatabaseService(db);
+    return new DatabaseService();
   }
 
-  private _toFixed(num, decimals = 2): number {
+  private _toFixed(num: number, decimals = 2): number {
     const factor = 10 ** decimals;
     return ((num * factor) - (num * factor % 1)) / factor;
   }
@@ -41,74 +43,137 @@ export class DatabaseService implements DatabaseServiceInterface {
     return 'C2';
   }
 
-  async saveUserAnswer(sessionId: string, telegramUser: string, userAnswer: AnswerEntry): Promise<string> {
-    await this.db.read();
+  async createUserAnswer(sessionId: string, telegramUser: string, userAnswer: Omit<AnswerEntry, 'id'>): Promise<number | null> {
+    // Convert answerId to number safely
+    const answerId = userAnswer.answerId !== undefined ? Number(userAnswer.answerId) : null;
 
-    const session = this.db.data!.sessions.find(s => s.sessionId === sessionId);
-    const id = Date.now().toString();
-    const answerWithId: AnswerEntry = {
-      ...userAnswer,
-      id,
-      createdAt: new Date().toISOString(),
-    };
-
-    if (session) {
-      session.answers.push(answerWithId);
-    } else {
-      this.db.data!.sessions.push({
-        sessionId,
-        telegramUser,
-        answers: [answerWithId],
-      });
+    if (answerId !== null && isNaN(answerId)) {
+      this.logger.log({ type: 'error', message: `Invalid answerId: ${userAnswer.answerId}` });
+      this.logger.log({ type: 'error', message: 'answerId must be a number' });
+      return null;
     }
 
-    await this.db.write();
-    this.logger.log({ type: 'event', message: `Answer saved with ID ${telegramUser} saved with id ${id} for session ${sessionId}` });
-    return id;
+    // Ensure the session exists
+    const { data: existingSession, error: sessionError } = await this.db
+      .from('sessions')
+      .select('id')
+      .eq('id', sessionId)
+      .maybeSingle();
+
+    if (sessionError) {
+      this.logger.log({ type: 'error', message: `Error fetching session: ${sessionError.message}` });
+      return null;
+    }
+
+    if (!existingSession) {
+      const { error: createError } = await this.db
+        .from('sessions')
+        .insert([{ id: sessionId, telegram_user: telegramUser }]);
+
+      if (createError) {
+        this.logger.log({ type: 'error', message: `Error creating session: ${createError.message}` });
+      }
+    }
+
+    const { data, error } = await this.db
+      .from('answers')
+      .insert({
+        session_id: sessionId,
+        question_id: userAnswer.questionId,
+        answer_id: answerId,
+        is_correct: userAnswer.isCorrect,
+        created_at: userAnswer.createdAt,
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      this.logger.log({ type: 'error', message: `Error saving answer: ${error.message}` });
+      return null;
+    }
+
+    const newId = data?.id;
+    if (newId) {
+      this.logger.log({ type: 'event', message: `Answer ${newId} saved for user ${telegramUser} in session ${sessionId}` });
+    }
+
+    return newId ?? null;
   }
 
-  async getUserQuizHistory(userId: string): Promise<AnswerEntry[]> {
-    await this.db.read();
-    return this.db.data!.sessions
-      .filter(session => session.telegramUser === userId)
-      .flatMap(session => session.answers);
+  // Update entry adding the check result
+  async updateUserAnswer(answerId: number, isCorrect: boolean): Promise<void> {
+    await this.db
+      .from('answers')
+      .update({ 'is_correct': isCorrect })
+      .eq('id', answerId);
   }
+
+  // Get all answers submitted by a user
+  async getUserQuizHistory(userId: string): Promise<AnswerEntry[]> {
+    const { data, error } = await this.db
+      .from('answers')
+      .select('id, session_id, question_id, answer_id, is_correct, created_at, sessions!inner(telegram_user)')
+      .eq('sessions.telegram_user', userId);
+
+    if (error) {
+      this.logger.log({ type: 'error', message: `Error fetching user quiz history: ${error.message}` });
+      return [];
+    }
+
+    return (data || []).map((row) => ({
+      id: row.id,
+      sessionId: row.session_id,
+      questionId: row.question_id,
+      answerId: row.answer_id,
+      isCorrect: row.is_correct,
+      createdAt: row.created_at,
+      telegramUser: row.sessions?.[0]?.telegram_user
+    })) as AnswerEntry[];
+  }
+
 
   async getQuizStats(): Promise<QuizStats> {
-    await this.db.read();
-    const allAnswers = this.db.data!.sessions.flatMap(session => session.answers);
-
-    const totalAnswers = allAnswers.length;
-    const correctAnswers = allAnswers.filter(a => a.isCorrect).length;
-
-    return {
-      totalAnswers,
-      correctAnswers,
-      averageScore: totalAnswers > 0 ? this._toFixed((correctAnswers / totalAnswers) * 100) : 0
-    };
-  }
-
-  async getQuizStatByUserSession(sessionId: string, telegramUser: string): Promise<PlacementTestResults> {
-    await this.db.read();
-    const session = this.db.data!.sessions.find(
-      s => s.sessionId === sessionId && s.telegramUser === telegramUser
-    );
-
-    if (!session) {
-      this.logger.log({ type: 'event', message: `Session not found for user ${telegramUser} with sessionId ${sessionId}`});
-      return;
+    const { data, error } = await this.db.from('answers').select('is_correct');
+    if (error) {
+      this.logger.log({ type: 'error', message: `Error fetching quiz stats: ${error.message}` });
+      return { totalAnswers: 0, correctAnswers: 0, averageScore: 0 };
     }
 
-    const totalAnswers = session.answers.length;
-    const correctAnswers = session.answers.filter(a => a.isCorrect).length;
+    const answers = data || [];
+    const totalAnswers = answers.length;
+    const correctAnswers = answers.filter(a => a.is_correct).length;
     const averageScore = totalAnswers > 0 ? this._toFixed((correctAnswers / totalAnswers) * 100) : 0;
 
     return {
       totalAnswers,
       correctAnswers,
-      averageScore: averageScore,
+      averageScore,
+    };
+  }
+
+  async getQuizStatByUserSession(sessionId: string, telegramUser: string): Promise<PlacementTestResults | undefined> {
+    const { data, error } = await this.db
+      .from('answers')
+      .select('is_correct, sessions!inner(telegram_user)')
+      .eq('session_id', sessionId)
+      .eq('sessions.telegram_user', telegramUser);
+
+    if (error) {
+      this.logger.log({ type: 'error', message: `Error fetching session stats: ${error.message}` });
+    }
+
+    if (!data || data.length === 0) return;
+
+    const totalAnswers = data.length;
+    const correctAnswers = data.filter(a => a.is_correct).length;
+    const averageScore = totalAnswers > 0 ? this._toFixed((correctAnswers / totalAnswers) * 100) : 0;
+
+    return {
+      totalAnswers,
+      correctAnswers,
+      averageScore,
       score: this._getScore(averageScore),
-      proficiencyLevel: this._getProficiencyLevel(averageScore)
+      proficiencyLevel: this._getProficiencyLevel(averageScore),
     };
   }
 }
