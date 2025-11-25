@@ -176,4 +176,34 @@ export class DatabaseService implements DatabaseServiceInterface {
       proficiencyLevel: this._getProficiencyLevel(averageScore),
     };
   }
+
+  async getUserProgress(sessionId: string): Promise<number | null> {
+    const { data, error } = await this.db
+      .from('progress')
+      .select('current_question')
+      .eq('session_id', sessionId)
+      .maybeSingle();
+
+    if (error) {
+      this.logger.log({ type: 'error', message: `Error fetching progress: ${error.message}` });
+      return null;
+    }
+
+    return data?.current_question ?? null;
+  }
+
+  async setUserProgress(sessionId: string, telegramUser: string, questionId: number): Promise<void> {
+    const { error } = await this.db
+      .from('progress')
+      .upsert({
+        session_id: sessionId,
+        telegram_user: telegramUser,
+        current_question: questionId,
+        updated_at: new Date().toISOString()
+      });
+
+    if (error) {
+      this.logger.log({ type: 'error', message: `Error saving progress: ${error.message}` });
+    }
+  }
 }
