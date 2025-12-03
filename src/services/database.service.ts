@@ -25,22 +25,21 @@ export class DatabaseService implements DatabaseServiceInterface {
     return ((num * factor) - (num * factor % 1)) / factor;
   }
 
-  private _getScore(average: number): Grade {
-    if (average >= 90) return 'A';
-    if (average >= 80) return 'B';
-    if (average >= 70) return 'C';
-    if (average >= 60) return 'D';
-    if (average >= 50) return 'E';
+  private _getScore(score: number): Grade {
+    if (score >= 90) return 'A';
+    if (score >= 80) return 'B';
+    if (score >= 70) return 'C';
+    if (score >= 60) return 'D';
+    if (score >= 50) return 'E';
     return 'F';
   }
 
-  private _getProficiencyLevel(average: number): ProficiencyLevel {
-    if (average <= 20) return 'A1';
-    if (average <= 40) return 'A2';
-    if (average <= 60) return 'B1';
-    if (average <= 75) return 'B2';
-    if (average <= 90) return 'C1';
-    return 'C2';
+  private _getProficiencyLevel(score: number): ProficiencyLevel {
+    if (score <= 30) return 'A1';
+    if (score <= 50) return 'A2';
+    if (score <= 80) return 'B1';
+    if (score <= 90) return 'B2';
+    return 'B2';
   }
 
   async createUserAnswer(sessionId: string, telegramUser: string, userAnswer: Omit<AnswerEntry, 'id'>): Promise<number | null> {
