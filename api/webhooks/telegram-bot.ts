@@ -48,8 +48,8 @@ enum botTriggers {
  */
 async function helloMessage(chatId): Promise<void> {
   const message = "Мы поможем тебе!\n\n" +
-      "Всего в тесте 30 вопросов 🇮🇹\n" +
-      "Для прохождения — просто выбери правильный ответ. После мы проверим его и определим твой уровень в течение 24 часов!\n\n" +
+      `Всего в тесте ${TOTAL_QUESTIONS} вопросов 🇮🇹\n` +
+      "Для прохождения — просто выбери правильный ответ. Узнай свой уровень!\n\n" +
       "Жми — пройти тест👇";
   await telegramBot.telegram.sendMessage(chatId, message, {
     reply_markup: {
@@ -114,16 +114,16 @@ function registerBot(): void {
       : ctx.from!;
 
     USER = user?.username ?? String(user?.id ?? CHAT_ID);
-    // Build session id following your current approach (you can change to your real logic)
     SESSION_ID = `${USER}_${CHAT_ID}_${Date.now()}`;
     CURRENT_QUESTION_ID = 0;
 
     const db = await getDb();
+    TOTAL_QUESTIONS = TOTAL_QUESTIONS ?? (await questionsService.getQuestionsTotalCount());
 
     // store initial progress: sessionId, telegramUser, question number
     await db.setUserProgress(SESSION_ID, USER, CURRENT_QUESTION_ID);
 
-    await ctx.reply('Всего в тесте 30 вопросов 🤩\nВыбери правильный ответ⬇');
+    await ctx.reply(`Всего в тесте ${TOTAL_QUESTIONS} вопросов 🤩\nВыбери правильный ответ⬇`);
 
     await sendQuizQuestionToChat(String(CHAT_ID), CURRENT_QUESTION_ID);
   });
@@ -152,7 +152,6 @@ function registerBot(): void {
     }
 
     if (!SESSION_ID) {
-      // keep your session id construction consistent with start_quiz flow;
       // fallback to combination if not set
       SESSION_ID = `${USER}_${CHAT_ID}_${Date.now()}`;
     }
@@ -189,8 +188,7 @@ function registerBot(): void {
     // save answer and run worker to check user's response
     await saveQuestion(ctx, payload);
 
-    // compute totals & progress
-    TOTAL_QUESTIONS = TOTAL_QUESTIONS ?? (await questionsService.getQuestionsTotalCount());
+    // compute progress
     const nextQuestionId = (CURRENT_QUESTION_ID ?? 0) + 1;
 
     if ((CURRENT_QUESTION_ID ?? 0) >= (TOTAL_QUESTIONS - 1)) {
@@ -234,7 +232,7 @@ async function sendQuizQuestionToChat(chatId: string, questionId: number): Promi
 async function sendQuizFinishMessage(chatId: string): Promise<void> {
   await telegramBot.telegram.sendMessage(
     chatId,
-    "🎉 Тест пройден!\n\nСкоро тут появятся твои результаты"
+    "🎉 Тест пройден!\n\nВ течение минуты тут появятся твои результаты"
   );
 }
 
@@ -263,7 +261,6 @@ async function sendQuizResultsMessage(
 
   await telegramBot.telegram.sendMessage(chatId, resultMessage);
 }
-
 
 // Register bot handlers once (safe in serverless)
 registerBot();
