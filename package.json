@@ -24,7 +24,8 @@
     "start": "NODE_ENV=production node dist/server.js",
     "start-dev": "NODE_ENV=development nodemon --watch src --ext ts,json --exec ts-node src/server.ts",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "migrate": "knex migrate:latest"
   },
   "devDependencies": {
     "@babel/core": "^7.19.3",
