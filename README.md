@@ -76,6 +76,20 @@ npx knex migrate:latest
 npx knex migrate:rollback
 ```
 
+## Seeds
+
+### Create
+
+```shell
+knex seed:make <seed-name>
+```
+
+### Seeding
+
+```shell
+knex seed:run
+```
+
 ### Quick Troubleshooting
 
 If Knex reports the migration directory is corrupt after renaming a file, check the `knex_migrations` table in your DB and update the name column to match the actual filename.
