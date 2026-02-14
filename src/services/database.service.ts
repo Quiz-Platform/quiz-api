@@ -1,4 +1,4 @@
-import { DatabaseServiceInterface, AnswerEntry } from '../models/database.interface';
+import {DatabaseServiceInterface, AnswerEntry, Sessions} from '../models/database.interface';
 import { Logger } from '../utils/logger';
 import { Grade, PlacementTestResults, ProficiencyLevel, QuizStats } from '../models/answers.interface';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -42,6 +42,66 @@ export class DatabaseService implements DatabaseServiceInterface {
     return 'B2';
   }
 
+  private async _ensureSessionExists(sessionId: string): Promise<boolean> {
+    const { data, error: sessionError } = await this.db
+      .from('sessions')
+      .select('id')
+      .eq('id', sessionId)
+      .maybeSingle();
+
+    if (sessionError) {
+      this.logger.log({ type: 'error', message: `Error fetching session: ${sessionError.message}` });
+      return false;
+    }
+  }
+
+  async createNewSession(sessionId: string, telegramUser: string): Promise<void> {
+    const { data: existingSession, error } = await this.db
+      .from('sessions')
+      .select('id')
+      .eq('id', sessionId)
+      .maybeSingle();
+
+    if (error) {
+      this.logger.log({
+        type: 'error',
+        message: `Error fetching session: ${error.message}`,
+      });
+      throw error;
+    }
+
+    if (existingSession) return;
+
+    const { error: insertError } = await this.db
+      .from('sessions')
+      .insert({ id: sessionId, telegram_user: telegramUser });
+
+    if (insertError) {
+      this.logger.log({
+        type: 'error',
+        message: `Error creating session: ${insertError.message}`,
+      });
+      throw insertError;
+    }
+  }
+
+  async getLatestUserSessionId(userId: string): Promise<string> {
+    const { data: session, error } = await this.db
+      .from('sessions')
+      .select('id')
+      .eq('telegram_user', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error) {
+      this.logger.log({ type: 'error', message: `Error fetching session: ${error.message}` });
+      throw error;
+    }
+
+    return session.id;
+  }
+
   async createUserAnswer(sessionId: string, telegramUser: string, userAnswer: Omit<AnswerEntry, 'id'>): Promise<number | null> {
     // Convert answerId to number safely
     const answerId = userAnswer.answerId !== undefined ? Number(userAnswer.answerId) : null;
@@ -52,26 +112,9 @@ export class DatabaseService implements DatabaseServiceInterface {
       return null;
     }
 
-    // Ensure the session exists
-    const { data: existingSession, error: sessionError } = await this.db
-      .from('sessions')
-      .select('id')
-      .eq('id', sessionId)
-      .maybeSingle();
-
-    if (sessionError) {
-      this.logger.log({ type: 'error', message: `Error fetching session: ${sessionError.message}` });
-      return null;
-    }
-
-    if (!existingSession) {
-      const { error: createError } = await this.db
-        .from('sessions')
-        .insert([{ id: sessionId, telegram_user: telegramUser }]);
-
-      if (createError) {
-        this.logger.log({ type: 'error', message: `Error creating session: ${createError.message}` });
-      }
+    const sessionReady = await this._ensureSessionExists(sessionId);
+    if (!sessionReady) {
+      await this.createNewSession(sessionId, telegramUser);
     }
 
     const { data, error } = await this.db
