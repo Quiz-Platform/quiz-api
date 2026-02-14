@@ -1,4 +1,4 @@
-import {DatabaseServiceInterface, AnswerEntry, Sessions} from '../models/database.interface';
+import { DatabaseServiceInterface, AnswerEntry } from '../models/database.interface';
 import { Logger } from '../utils/logger';
 import { Grade, PlacementTestResults, ProficiencyLevel, QuizStats } from '../models/answers.interface';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
