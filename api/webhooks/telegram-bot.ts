@@ -229,8 +229,10 @@ async function sendQuizResultsMessage(
   const total =  await questionsService.getQuestionsTotalCount();
   const { correctAnswers, proficiencyLevel } = stats;
 
-  const resultMessage =
-    `🎉 Вы прошли тест!\n\n` + `Правильных ответов: ${correctAnswers} из ${total}\n` + `Ваш уровень: ${proficiencyLevel}`;
+  const resultMessagePt1 = `🎉 Вы прошли тест!\n\n` + `Правильных ответов: ${correctAnswers} из ${total} `;
+  const resultMessagePt2 = proficiencyLevel !== null ? `\nВаш уровень: ${proficiencyLevel}` : '';
+
+  const resultMessage = `${resultMessagePt1}${resultMessagePt2}`;
 
   await telegramBot.telegram.sendMessage(chatId, resultMessage);
 }

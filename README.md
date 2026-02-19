@@ -90,6 +90,12 @@ knex seed:make <seed-name>
 knex seed:run
 ```
 
+Sometimes it's problematic to run batch seeds because it seeds usually clean up the table before inserting data, so it's better run: 
+
+```shell
+knex seed:run --specific=<seed-file-name.js>
+```
+
 ### Quick Troubleshooting
 
 If Knex reports the migration directory is corrupt after renaming a file, check the `knex_migrations` table in your DB and update the name column to match the actual filename.

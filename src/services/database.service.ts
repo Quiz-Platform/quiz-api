@@ -34,12 +34,21 @@ export class DatabaseService implements DatabaseServiceInterface {
     return 'F';
   }
 
-  private _getProficiencyLevel(score: number): ProficiencyLevel {
-    if (score <= 30) return 'A1';
-    if (score <= 50) return 'A2';
-    if (score <= 80) return 'B1';
-    if (score <= 90) return 'B2';
-    return 'B2';
+  private async _getProficiencyLevel(score: number): Promise<ProficiencyLevel | null> {
+    const {data, error: sessionError} = await this.db
+      .from('proficiency')
+      .select('*');
+
+    for (let row of data) {
+      if (row.percentage >= score) return row.id;
+    }
+
+    if (sessionError) {
+      this.logger.log({ type: 'error', message: `Error fetching proficiency levels: ${sessionError.message}` });
+      return null;
+    }
+
+    return data[data.length - 1].id;
   }
 
   private async _ensureSessionExists(sessionId: string): Promise<boolean> {
@@ -215,7 +224,7 @@ export class DatabaseService implements DatabaseServiceInterface {
       correctAnswers,
       averageScore,
       score: this._getScore(averageScore),
-      proficiencyLevel: this._getProficiencyLevel(averageScore),
+      proficiencyLevel: await this._getProficiencyLevel(averageScore),
     };
   }
 
