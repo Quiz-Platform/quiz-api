@@ -89,6 +89,13 @@ function usernameFallback(ctx: Context): string {
   return user?.username ?? String(user?.id ?? chatId);
 }
 
+async function initNewSession(user, chatId): Promise<void> {
+  const db = await getDb();
+  const sessionId = `${user}_${chatId}_${Date.now()}`; // TODO: introduce Telegraph session storage
+  await db.createNewSession(sessionId, user); // TODO: introduce sessions expire time
+  await db.setUserProgress(sessionId, user, 0);
+}
+
 /**
  * Register bot handlers
  */
@@ -99,14 +106,9 @@ function registerBot(): void {
     if (chatId === null) return;
     const user = usernameFallback(ctx);
 
-    const db = await getDb();
-    const sessionId = `${user}_${chatId}_${Date.now()}`; // TODO: introduce Telegraph session storage
-    await db.createNewSession(sessionId, user); // TODO: introduce sessions expire time
-    await db.setUserProgress(sessionId, user, 0);
-
+    await initNewSession(user, chatId);
     await helloMessage(chatId);
   });
-
 
   // Every time a user runs quiz scenario
   telegramBot.action(botTriggers.START, async (ctx: Context): Promise<void> => {
@@ -124,7 +126,6 @@ function registerBot(): void {
     await ctx.reply(`Всего в тесте ${total} вопросов 🤩\nВыбери правильный ответ⬇`);
     await sendQuizQuestionToChat(String(chatId), currentQuestionId);
   });
-
 
   // Callback query
   telegramBot.on('callback_query', async (ctx: Context): Promise<void> => {
@@ -169,11 +170,11 @@ function registerBot(): void {
     // compute progress
     const nextQuestionId = (currentQuestionId ?? 0) + 1;
 
+    // resulting chain
     if ((currentQuestionId ?? 0) >= (total - 1)) {
-      // last question answered
       await sendQuizFinishMessage(String(chatId));
       await sendQuizResultsMessage(String(chatId), sessionId, user);
-      // clear session state???
+      await initNewSession(user, chatId);
       return;
     }
 
