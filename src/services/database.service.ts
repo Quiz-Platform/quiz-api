@@ -35,17 +35,21 @@ export class DatabaseService implements DatabaseServiceInterface {
   }
 
   private async _getProficiencyLevel(score: number): Promise<ProficiencyLevel | null> {
-    const {data, error: sessionError} = await this.db
+    const {data, error: dbError} = await this.db
       .from('proficiency')
       .select('*');
 
-    for (let row of data) {
-      if (row.percentage >= score) return row.id;
+    if (dbError) {
+      this.logger.log({ type: 'error', message: `Error fetching proficiency levels: ${dbError.message}` });
+      return null;
     }
 
-    if (sessionError) {
-      this.logger.log({ type: 'error', message: `Error fetching proficiency levels: ${sessionError.message}` });
+    if (!data || data.length === 0) {
       return null;
+    }
+
+    for (let row of data) {
+      if (row.percentage >= score) return row.id;
     }
 
     return data[data.length - 1].id;
