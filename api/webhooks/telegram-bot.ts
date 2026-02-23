@@ -171,18 +171,17 @@ function registerBot(): void {
     const nextQuestionId = (currentQuestionId ?? 0) + 1;
 
     // resulting chain
-    if ((currentQuestionId ?? 0) >= (total - 1)) {
+    if (currentQuestionId === total) {
       await sendQuizFinishMessage(String(chatId));
       await sendQuizResultsMessage(String(chatId), sessionId, user);
-      await initNewSession(user, chatId);
       return;
     }
 
     // load next question and advance
-    await db.setUserProgress(sessionId, user, nextQuestionId);
-    currentQuestionId = nextQuestionId;
-
-    await sendQuizQuestionToChat(String(chatId), nextQuestionId);
+    if (currentQuestionId < total) {
+      await db.setUserProgress(sessionId, user, nextQuestionId);
+      await sendQuizQuestionToChat(String(chatId), nextQuestionId);
+    }
   });
 }
 
@@ -194,7 +193,7 @@ async function sendQuizQuestionToChat(chatId: string, questionId: number): Promi
 
   const question: Question = await questionsService.getQuestionById(questionId);
 
-  await telegramBot.telegram.sendMessage(chatId, question.text, {
+  await telegramBot.telegram.sendMessage(chatId, `Вопрос №${questionId + 1}\n${question.text}`, {
     reply_markup: {
       inline_keyboard: question.options.map((o) => [{ text: o.text, callback_data: o.id.toString() }]),
     },
